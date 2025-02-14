@@ -1,6 +1,6 @@
-# miastro
+# Maestro
 
-Pronounced (Mai-stro) is repository for my personal astrophotograpy stacking and editing suite built in python using Jax
+Maestro is repository for my personal astrophotograpy stacking and editing suite built in python using Jax
 
 
 ## Ideas to implement
