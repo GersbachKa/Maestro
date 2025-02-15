@@ -4,11 +4,11 @@ from multiprocessing import Pool
 from os import cpu_count
 from functools import partial
 
-from maestro import DEBUG
+from maestro import DEBUG, MULTICORE
 from maestro.frame import Frame
 
 
-CPU_COUNT = cpu_count()
+CPU_COUNT = min(cpu_count(), 8) # Limit to 8 cores for now
 
 
 # Many of the preprocessing steps are identical between calibration frames.
@@ -101,14 +101,17 @@ class CombinationFrame(Frame):
     
 
     def _load_all_frames(self):
-        # For this method, we will load all of the the different frames
-        # using multiprocessing to get around the GIL
 
         frame_gen = partial(Frame, frame_format=self.frame_format, loadkwargs=self.loadkwargs)
-
-        with Pool(CPU_COUNT) as p:
-            all_frames = list(p.map(frame_gen, self.frame_paths))
+        if MULTICORE:
+            # For this method, we will load all of the the different frames
+            # using multiprocessing to get around the GIL
+            with Pool(CPU_COUNT) as p:
+                all_frames = list(p.map(frame_gen, self.frame_paths))
         
+        else:
+            all_frames = [frame_gen(path) for path in tqdm(self.frame_paths)]
+
         return all_frames
 
 
