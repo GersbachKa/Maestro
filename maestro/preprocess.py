@@ -1,122 +1,144 @@
 import numpy as np
-
-from .photo import Photo_base
-
 from tqdm.auto import tqdm
+from multiprocessing import Pool
+from os import cpu_count
+from functools import partial
+
+from maestro import DEBUG
+from maestro.frame import Frame
 
 
-# Preprocess_base class --------------------------------------------------------
-# Many of the preprocessing steps are identical between calibration frames. Use
-# this class to have subsiquent versions inherit much of the functionality
+CPU_COUNT = cpu_count()
 
-class Preprocess_base(Photo_base):
-    def __init__(self, photo_paths, photo_format=None, loadkwargs=None, method='median', verbose=False):
-        self.verbose = verbose
-        print('Initializing calibration frame...') if self.verbose else None;
 
-        if not hasattr(photo_paths, '__iter__'):
-            raise ValueError("Photo paths must be an iterable (list)")
+# Many of the preprocessing steps are identical between calibration frames.
+class CombinationFrame(Frame):
+    """
 
-        self.photo_path = photo_paths
-        self.photo_count = len(photo_paths)
+    _extended_summary_
 
-        # Start by loading the photo format and load arguments
-        self.photo_format, self.loadkwargs = self._parse_photo_args(photo_paths[0], 
-                                                    photo_format, loadkwargs)
+    Args:
+        Frame (_type_): _description_
+    """
+
+    def __init__(self, frame_paths, frame_format=None, loadkwargs=None, method='median',
+                 keep_individual=False):
+        if DEBUG:
+            print('Initializing preprocess base...')
+
+        if not hasattr(frame_paths, '__iter__'):
+            frame_paths = [frame_paths]
+
+        # Set the frame paths, format, and load arguments
+        self.frame_paths = frame_paths
+        self.n_frames = len(frame_paths)
         
-        # Need to find the dimensions of the calibration frames (assume they are all the same)
-        temp_frame = self._load_photo(photo_paths[0])
-        self.xdim, self.ydim = temp_frame.shape[:2]
-        self.npix = self.xdim * self.ydim
+        if frame_format is None:
+            self.frame_format = self._get_frame_format(frame_paths[0])
+        else:
+            self.frame_format = frame_format.lower()
 
-        # Get the original data type (We will use more accurate data types for the master)
-        self.original_dtype = temp_frame.dtype
-        
-        # Many frames (biases) tend to be dominated by single values,
-        # we should use floats for the master frames
-        self.master_dtype = np.float16
+        if loadkwargs is None:
+            self.loadkwargs = self._get_frame_loadkwargs()
+        else:
+            self.loadkwargs = loadkwargs
+
+        # Set the method for creating the master frame
+        self.master_method = method
+
+        # Set the data type for the master frame (use np.float16)
+        self.master_dtype = np.uint8
 
         # Create the master frame
-        self.master_frame = np.zeros((self.xdim, self.ydim), dtype=self.master_dtype)
+        self.master_frame = self.create_master_frame(self.master_method, keep_individual)
 
-        # Now create the master frame
-        self.master_method = method
-        self.master_frame = self.create_master_frame(method)
-        self.rgb = self.master_frame.astype(self.original_dtype)
-
-        if self.frame_type is None:
-            self.frame_type = 'Preprocess_base'
-        
+        # Convert the master frame to an RGB image for display
+        self.rgb = self.master_frame.astype(np.uint8)
+    
+        # Set the few pieces of metadata we can get from the frame
+        # TODO: Get more metadata from raw formats (CR3, NEF, etc)
+        self.dimensions = self.master_frame.shape
+        self.npix = self.dimensions[0] * self.dimensions[1]
+        self.dtype = self.master_frame.dtype
+        self.frame_type = 'CombinationFrame'
 
     
-    def create_master_frame(self, method='median'):
-        print(f'Creating master frame using method: {method}') if self.verbose else None;
+    def create_master_frame(self, method='median', keep_individual=False):
+        if DEBUG:
+            print(f'Creating master frame using method: {method}')
         
-        # Method can be 'median', 'mean', 'clipped_mean'
+        all_frames = self._load_all_frames()
+        all_rgb = [frame.rgb for frame in all_frames]
 
-        # Load all of the calibration frames
-        all_frames = [self._load_photo(b) for b in tqdm(self.photo_path, 
-                                                    desc=f'Loading {self.frame_type} frames')]
+        # Method can be 'median', 'mean', 'clipped_mean'
         
         # Now we need to use the different methods
         if method.lower() == 'median':
-            master_frame = np.median(all_frames, axis=0)
+            master_frame = np.median(all_rgb, axis=0)
 
         elif method.lower() == 'mean':
-            master_frame = np.mean(all_frames, axis=0)
+            master_frame = np.mean(all_rgb, axis=0)
 
         elif method.lower() == 'clipped_mean':
             # Sigma clipping of outliers. We will use a 3-sigma clipping
             # to do so, we will calculate the current mean and standard deviation
-            mean, std = np.mean(all_frames, axis=0), np.std(all_frames, axis=0)
-
+            mean, std = np.mean(all_rgb, axis=0), np.std(all_rgb, axis=0)
             # Now we will remove the outliers
-            to_keep = np.abs(all_frames - mean) < 3*std
-            
+            to_keep = np.abs(all_rgb - mean) < 3*std
             # Now recalculate the mean of the clipped data
-            master_frame = np.mean(all_frames[to_keep], axis=0)
+            master_frame = np.mean(all_rgb[to_keep], axis=0)
 
         else:
-            raise ValueError(f"Master frame creation method not implemented: {method}")
+            raise NotImplementedError(f"Master frame creation method not implemented: {method}")
         
-        del all_frames # Free up memory (should be done automatically, but just in case)
+        if keep_individual:
+            self.individual_frames = all_frames
+        else:
+            del all_frames # Free up memory (should be done automatically, but just in case)
+            self.individual_frames = None
+
         return master_frame.astype(self.master_dtype)
     
-    # Overloaded methods --------------------------------------------------------
-    
-    def reload(self):
-        print('Reloading calibration frames...') if self.verbose else None;
 
-        self.master_frame = self.create_master_frame(self.master_method)
-        self.rgb = self.master_frame.astype(self.original_dtype)
-        return
+    def _load_all_frames(self):
+        # For this method, we will load all of the the different frames
+        # using multiprocessing to get around the GIL
+
+        frame_gen = partial(Frame, frame_format=self.frame_format, loadkwargs=self.loadkwargs)
+
+        with Pool(CPU_COUNT) as p:
+            all_frames = list(p.map(frame_gen, self.frame_paths))
+        
+        return all_frames
 
 
-# Bias class -------------------------------------------------------------------
+# Inherited classes for the different calibration frames -----------------------
 
-class Bias_frame(Preprocess_base):
-    def __init__(self, photo_paths, photo_format=None, loadkwargs=None, method='median', verbose=False):
-        print('Initializing bias frame...') if verbose else None;
+class Bias(CombinationFrame):
+    def __init__(self, bias_paths, frame_format=None, loadkwargs=None, 
+                 method='median', keep_individual=False):
+        if DEBUG:
+            print('Initializing bias frame...')
+
+        super().__init__(bias_paths, frame_format, loadkwargs, method, keep_individual)
         self.frame_type = 'Bias'
-        super().__init__(photo_paths, photo_format, loadkwargs, method, verbose)
 
 
-# Dark class -------------------------------------------------------------------
+class Dark(CombinationFrame):
+    def __init__(self, dark_paths, frame_format=None, loadkwargs=None, 
+                 method='median', keep_individual=False):
+        if DEBUG:
+            print('Initializing dark frame...')
 
-class Dark_frame(Preprocess_base):
-    def __init__(self, photo_paths, photo_format=None, loadkwargs=None, method='median', verbose=False):
-        print('Initializing dark frame...') if verbose else None;
+        super().__init__(dark_paths, frame_format, loadkwargs, method, keep_individual)
         self.frame_type = 'Dark'
-        super().__init__(photo_paths, photo_format, loadkwargs, method)
 
 
+class Flat(CombinationFrame):
+    def __init__(self, flat_paths, frame_format=None, loadkwargs=None, 
+                 method='median', keep_individual=False):
+        if DEBUG:
+            print('Initializing flat frame...')
 
-# Flat class -------------------------------------------------------------------
-
-class Flat_frame(Preprocess_base):
-    def __init__(self, photo_paths, photo_format=None, loadkwargs=None, method='median', verbose=False):
-        print('Initializing flat frame...') if verbose else None;
+        super().__init__(flat_paths, frame_format, loadkwargs, method, keep_individual)
         self.frame_type = 'Flat'
-        super().__init__(photo_paths, photo_format, loadkwargs, method)
-
-
