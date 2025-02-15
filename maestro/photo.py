@@ -5,8 +5,10 @@ import rawpy
 
 class Photo_base:
 
-    def __init__(self, photo_path, photo_format=None, loadkwargs=None):
-        
+    def __init__(self, photo_path, photo_format=None, loadkwargs=None, verbose=False):
+        self.verbose = verbose
+        print('Initializing photo...') if self.verbose else None;
+
         self.photo_path = photo_path
 
         # Start with loading the photo format and load arguments
@@ -24,11 +26,15 @@ class Photo_base:
     # Exposed methods ----------------------------------------------------------
     
     def reload(self):
+        print('Reloading photo...') if self.verbose else None;
+
         self.rgb = self._load_photo(self.photo_path, self.photo_format, self.loadkwargs,
                                     return_attributes=False)
         return
 
     def get_grayscale(self, method='NTSC'):
+        print('Converting to grayscale...') if self.verbose else None;
+
         if (method is None) or (method.lower() == 'ntsc'):
             factor = (0.299, 0.587, 0.114)
         else:
@@ -40,6 +46,7 @@ class Photo_base:
     # Internal methods ---------------------------------------------------------
 
     def _parse_photo_args(self, photo_path, photo_format, loadkwargs):
+        print('Parsing photo arguments...') if self.verbose else None;
         
         # For photo format
         if photo_format is None:
@@ -59,6 +66,7 @@ class Photo_base:
         
 
     def _load_photo(self, photo_path):
+        print('Loading photo...') if self.verbose else None;
 
         if self.photo_format.lower() == 'png':
             return _load_png(photo_path, self.loadkwargs)
@@ -70,6 +78,10 @@ class Photo_base:
             return _load_cr3(photo_path, self.loadkwargs)
 
         return None
+    
+    
+    def _get_photo_attributes(self, photo_path):
+        pass
 
 
 
