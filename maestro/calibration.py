@@ -7,11 +7,14 @@ from functools import partial
 from maestro import DEBUG, MULTICORE
 from maestro.frame import Frame
 
-
 CPU_COUNT = min(cpu_count(), 8) # Limit to 8 cores for now
 
 
-# Many of the preprocessing steps are identical between calibration frames.
+# This file contains both the CombinationFrame, Bias, Dark, and Flat classes
+
+
+
+# CombinationFrame (Base class) ------------------------------------------------ 
 class CombinationFrame(Frame):
     """A Base class for a CombinationFrame object
 
@@ -178,7 +181,6 @@ class CombinationFrame(Frame):
         return all_frames
 
 
-# Inherited classes for the different calibration frames -----------------------
 
 class Bias(CombinationFrame):
     """The Bias class used to make master bias frames
