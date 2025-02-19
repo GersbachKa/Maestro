@@ -176,6 +176,7 @@ class Frame:
         new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
         return new_frame
     
+    
     def __rmul__(self, other):
         # Use guard clauses to check if this is allowed
         allowed_types = [int, float, np.ndarray]
@@ -217,6 +218,7 @@ class Frame:
         new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
         return new_frame
     
+    
     def __pow__(self, other):
         # Use guard clauses to check if this is allowed
         allowed_types = [int, float, np.ndarray]
@@ -236,6 +238,7 @@ class Frame:
         # Now we need to return a new Frame object
         new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
         return new_frame
+    
     
     def __rpow__(self, other):
         # Use guard clauses to check if this is allowed
