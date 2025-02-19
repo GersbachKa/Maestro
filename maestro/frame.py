@@ -1,9 +1,12 @@
 
 import numpy as np
 import rawpy
+from matplotlib import pyplot as plt
 
 from maestro import DEBUG
 
+global FORMAT_SUPPORT
+FORMAT_SUPPORT = ['png', 'jpg', 'cr3', 'master', 'null']
 
 class Frame:
     """A Base class for a Frame object
@@ -20,9 +23,11 @@ class Frame:
         dimensions (numpy.ndarray): The dimensions of the frame data [x, y, color]
         npix (int): The number of pixels in the frame
         dtype (str): The data type of the frame data
+
     """
 
-    def __init__(self, frame_path, frame_format=None, loadkwargs=None):
+    def __init__(self, frame_path, frame_format=None, loadkwargs=None, frame_type=None,
+                 rgb_set=None):
         """A Frame object constructor
 
         This constructor initializes a Frame object by loading the frame data from the
@@ -38,6 +43,8 @@ class Frame:
             frame_format (str, optional): The format of the frame file. Defaults to None.
             loadkwargs (dict, optional): The keyword arguments to be passed to the frame 
                 loading function. Defaults to None.
+            rgb_set (numpy.ndarray, optional): The frame data in RGB format. Only works
+                if frame_format is 'master'. Defaults to None.
         """
         if DEBUG:
             print('Initializing frame...')
@@ -46,25 +53,27 @@ class Frame:
         self.frame_path = frame_path
 
         if frame_format is None:
-            self.frame_format = self._get_frame_format(frame_path) 
+            self.frame_format = _get_frame_format(frame_path) 
         else: 
             self.frame_format = frame_format.lower()
 
         if loadkwargs is None:
-            self.loadkwargs = self._get_frame_loadkwargs()
+            self.loadkwargs = _get_frame_load_kwargs(self.frame_format)
         else:
             self.loadkwargs = loadkwargs
-
         
         # Now load the frame
-        self.rgb = self._load_frame()
-
+        if rgb_set is not None:
+            self.rgb = rgb_set
+        else:
+            self.rgb = self._load_frame()
 
         # Now set the few pieces of metadata we can get from the frame
         # TODO: Get more metadata from raw formats (CR3, NEF, etc)
         self.dimensions = self.rgb.shape
         self.npix = self.dimensions[0] * self.dimensions[1]
         self.dtype = self.rgb.dtype
+        self.frame_type = 'Unknown' if frame_type is None else frame_type
 
 
     def get_grayscale(self, method='NTSC'):
@@ -96,48 +105,158 @@ class Frame:
                factor[1]*self.rgb[:,:,1] + \
                factor[2]*self.rgb[:,:,2]
         return gray
-
-
-    def _get_frame_format(self, frame_path):
-        """A hidden method to get the frame format if not specified
-
-        NOTE: that this method breaks if the frame_path has multiple '.' characters
-        in the extension. This is a known issue and will be fixed in a future version.
-
-        Args:
-            frame_path (str): The path to the frame file
-
-        Returns:
-            str: The format of the frame file
-        """
-        if DEBUG:
-            print('Getting frame format...')
-
-        fmt = frame_path.split('.')[-1]
-        return fmt.lower()
     
 
-    def _get_frame_loadkwargs(self):
-        """A hidden method to get the frame load keyword arguments if not specified
+    def show(self, grayscale=False):
+        to_show = self.rgb.astype(np.uint8) if not grayscale \
+            else self.get_grayscale().astype(np.uint8)
+        
+        plt.imshow(self.get_grayscale(), cmap='gray')
 
-        This method returns the default keyword arguments for loading a frame in the
-        specified format. This is useful for raw formats (e.g. CR3, NEF) where the
-        rawpy.postprocess() function is used.
 
-        Returns:
-            dict: The keyword arguments for loading the frame
-        """
-        if DEBUG:
-            print('Getting frame load keyword arguments...')
+    def __add__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for +: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to add them')
+            
+            new_rgb = self.rgb + other.rgb
+        
+        elif type(other) in allowed_types:
+            new_rgb = self.rgb + other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
 
-        if self.frame_format == 'cr3':
-            lkwa = {'use_camera_wb':True, 'no_auto_scale':False,
-                    'no_auto_bright':True, 'chromatic_aberration':(1,1)}
-        else:
-            lkwa = {}
 
-        return lkwa
+    def __sub__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for -: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to subtract them')
+            
+            new_rgb = self.rgb - other.rgb
+        
+        elif type(other) in allowed_types:
+            new_rgb = self.rgb - other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+
+
+    def __mul__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for *: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to multiply them')
+            
+            new_rgb = self.rgb * other.rgb
+        
+        elif type(other) in allowed_types:
+            new_rgb = self.rgb * other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
     
+    def __rmul__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for *: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to multiply them')
+            
+            new_rgb = other.rgb * self.rgb 
+        
+        elif type(other) in allowed_types:
+            new_rgb = other * self.rgb
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+
+
+    def __truediv__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for /: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to divide them')
+            
+            new_rgb = self.rgb / other.rgb
+        
+        elif type(other) in allowed_types:
+            new_rgb = self.rgb / other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+    
+    def __pow__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for **: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to exponentiate them')
+            
+            new_rgb = self.rgb ** other.rgb
+        
+        elif type(other) in allowed_types:
+            new_rgb = self.rgb ** other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+    
+    def __rpow__(self, other):
+        # Use guard clauses to check if this is allowed
+        allowed_types = [int, float, np.ndarray]
+        if type(other) not in [Frame, int, float, np.ndarray]:
+            raise TypeError(f"unsupported operand type(s) for **: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to exponentiate them')
+            
+            new_rgb = other.rgb ** self.rgb
+        
+        elif type(other) in allowed_types:
+            new_rgb = other ** self.rgb
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+
 
     def _load_frame(self):
         """A hidden method to load the frame data
@@ -163,10 +282,59 @@ class Frame:
             func = _load_jpg
         elif self.frame_format == 'cr3':
             func = _load_cr3
+        elif self.frame_format == 'master':
+            raise NotImplementedError('Master frame loading does not make sense')
+        elif self.frame_format == 'null':
+            raise NotImplementedError('Null frame loading does not make sense')
         else:
             raise NotImplementedError(f"frame format not implemented: {self.frame_format}")
         
         return func(self.frame_path, self.loadkwargs)
+
+# Default loading arguments -----------------------------------------------------
+
+def _get_frame_format(frame_path):
+    """A hidden function to get the frame format if not specified
+
+    NOTE: that this method breaks if the frame_path has multiple '.' characters
+    in the extension. This is a known issue and will be fixed in a future version.
+
+    Args:
+        frame_path (str): The path to the frame file
+
+    Returns:
+        str: The format of the frame file
+    """
+    if DEBUG:
+        print('Getting frame format...')
+
+    fmt = (frame_path.split('.')[-1]).lower()
+
+    if fmt not in FORMAT_SUPPORT:
+        raise ValueError(f'Unsupported frame format: {fmt}')
+    return fmt
+
+
+def _get_frame_load_kwargs(frame_format):
+    """A hidden function to get the frame load keyword arguments if not specified
+
+    This method returns the default keyword arguments for loading a frame in the
+    specified format. This is useful for raw formats (e.g. CR3, NEF) where the
+    rawpy.postprocess() function is used.
+
+    Returns:
+        dict: The keyword arguments for loading the frame
+    """
+    if DEBUG:
+        print('Getting frame load keyword arguments...')
+
+    if frame_format in ['cr3']:
+        lkwa = {'use_camera_wb':True, 'no_auto_scale':False,
+                'no_auto_bright':True, 'chromatic_aberration':(1,1)}
+    else:
+        lkwa = {}
+
+    return lkwa
 
 
 # Custom loading functions -----------------------------------------------------
@@ -174,8 +342,10 @@ class Frame:
 def _load_png(frame_path, loadkwargs):
     pass
 
+
 def _load_jpg(frame_path, loadkwargs):
     pass
+
 
 def _load_cr3(frame_path, loadkwargs):
     """A custom loading function for CR3 files
