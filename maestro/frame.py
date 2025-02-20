@@ -112,7 +112,7 @@ class Frame:
                factor[1]*self.rgb[:,:,1] + \
                factor[2]*self.rgb[:,:,2]
         return gray
-    
+
 
     def show(self, grayscale=False, scaling=1.0, to_uint8=True):
         """Show the frame data through matplotlib imshow
