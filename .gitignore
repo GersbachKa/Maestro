@@ -1,7 +1,7 @@
 photos/
 .DS_store
 **/.DS_store
-
+*/old_notebooks/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
