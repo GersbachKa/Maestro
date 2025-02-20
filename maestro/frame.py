@@ -8,6 +8,8 @@ from maestro import DEBUG
 global FORMAT_SUPPORT
 FORMAT_SUPPORT = ['png', 'jpg', 'cr3', 'master', 'null']
 
+
+
 class Frame:
     """A Base class for a Frame object
 
@@ -23,9 +25,8 @@ class Frame:
         dimensions (numpy.ndarray): The dimensions of the frame data [x, y, color]
         npix (int): The number of pixels in the frame
         dtype (str): The data type of the frame data
-
+        frame_type (str): The type of frame (e.g. 'bias', 'dark', 'flat', 'light', 'master', 'null')
     """
-
     def __init__(self, frame_path, frame_format=None, loadkwargs=None, frame_type=None,
                  rgb_set=None):
         """A Frame object constructor
@@ -37,6 +38,10 @@ class Frame:
         If frame_format is a raw format (e.g. CR3, NEF), the loadkwargs will be
         given to the rawpy.postprocess() function. Generally, the defaults are fine,
         but can be overridden if you want the customization.
+
+        NOTE: If setting the frame data directly (i.e. rgb_set), the numpy array
+        will enforce positivity. This is because the frame data should not have
+        negative values.
 
         Args:
             frame_path (str): The path to the frame file
@@ -64,6 +69,8 @@ class Frame:
         
         # Now load the frame
         if rgb_set is not None:
+            # Enforce positivity
+            rgb_set[rgb_set < 0] = 0
             self.rgb = rgb_set
         else:
             self.rgb = self._load_frame()
@@ -107,17 +114,40 @@ class Frame:
         return gray
     
 
-    def show(self, grayscale=False):
-        to_show = self.rgb.astype(np.uint8) if not grayscale \
-            else self.get_grayscale().astype(np.uint8)
+    def show(self, grayscale=False, scaling=1.0, to_uint8=True):
+        """Show the frame data through matplotlib imshow
+
+        This method shows the frame data using the matplotlib imshow function. The
+        frame data can be shown in grayscale if specified. Note that this method
+        will show the frame data as a uint8 array, so the data may be clipped if
+        the data is not in the range [0, 255]. 
         
-        plt.imshow(self.get_grayscale(), cmap='gray')
+        Alternatively, the 'scaling' parameter can be used to scale the data before
+        showing. This parameter is a float that will be multiplied by the data before
+        showing.
+
+        Args:
+            grayscale (bool): A flag to show the frame data in grayscale.
+                Defaults to False.
+            auto_scale (bool): A flag to rescale the frame data to [0, 255].
+                Defaults to False.
+            to_uint8 (bool): A flag to convert the frame data to uint8 before
+                showing. Defaults to False.
+        """
+        to_show = self.rgb if not grayscale else self.get_grayscale()
+
+        to_show = scaling*to_show
+
+        if to_uint8:
+            to_show = to_show.astype(np.uint8)
+
+        plt.imshow(to_show, cmap='gray')
 
 
     def __add__(self, other):
+        """Method overload for '+' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for +: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -127,8 +157,29 @@ class Frame:
             
             new_rgb = self.rgb + other.rgb
         
-        elif type(other) in allowed_types:
+        else:
             new_rgb = self.rgb + other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+    
+
+    def __radd__(self, other):
+        """Method overload for '+' operator"""
+        # Use guard clauses to check if this is allowed
+        if type(other) not in MATH_SUPPORTED_TYPES:
+            raise TypeError(f"unsupported operand type(s) for +: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to add them')
+            
+            new_rgb = other.rgb + self.rgb
+        
+        else:
+            new_rgb = other + self.rgb
         
         # Now we need to return a new Frame object
         new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
@@ -136,9 +187,9 @@ class Frame:
 
 
     def __sub__(self, other):
+        """Method overload for '-' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for -: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -148,8 +199,29 @@ class Frame:
             
             new_rgb = self.rgb - other.rgb
         
-        elif type(other) in allowed_types:
+        else:
             new_rgb = self.rgb - other
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+    
+
+    def __rsub__(self, other):
+        """Method overload for '-' operator"""
+        # Use guard clauses to check if this is allowed
+        if type(other) not in MATH_SUPPORTED_TYPES:
+            raise TypeError(f"unsupported operand type(s) for -: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to subtract them')
+            
+            new_rgb = other.rgb - self.rgb
+        
+        else:
+            new_rgb = other - self.rgb
         
         # Now we need to return a new Frame object
         new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
@@ -157,9 +229,9 @@ class Frame:
 
 
     def __mul__(self, other):
+        """Method overload for '*' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for *: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -169,8 +241,8 @@ class Frame:
             
             new_rgb = self.rgb * other.rgb
         
-        elif type(other) in allowed_types:
-            new_rgb = self.rgb * other
+        else:
+            new_rgb =  self.rgb * other
         
         # Now we need to return a new Frame object
         new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
@@ -178,9 +250,9 @@ class Frame:
     
     
     def __rmul__(self, other):
+        """Method overload for '*' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for *: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -188,9 +260,9 @@ class Frame:
             if self.dimensions != other.dimensions:
                 raise ValueError('Frames must be the same size to multiply them')
             
-            new_rgb = other.rgb * self.rgb 
+            new_rgb = other.rgb * self.rgb
         
-        elif type(other) in allowed_types:
+        else:
             new_rgb = other * self.rgb
         
         # Now we need to return a new Frame object
@@ -199,9 +271,9 @@ class Frame:
 
 
     def __truediv__(self, other):
+        """Method overload for '/' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for /: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -211,7 +283,7 @@ class Frame:
             
             new_rgb = self.rgb / other.rgb
         
-        elif type(other) in allowed_types:
+        else:
             new_rgb = self.rgb / other
         
         # Now we need to return a new Frame object
@@ -219,10 +291,31 @@ class Frame:
         return new_frame
     
     
-    def __pow__(self, other):
+    def __rtruediv__(self, other):
+        """Method overload for '/' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
+            raise TypeError(f"unsupported operand type(s) for /: 'Frame' and '{type(other)}'")
+        
+        # Check if the frames are the same size
+        if type(other) is Frame:
+            if self.dimensions != other.dimensions:
+                raise ValueError('Frames must be the same size to divide them')
+            
+            new_rgb = other.rgb / self.rgb
+        
+        else:
+            new_rgb = other / self.rgb
+        
+        # Now we need to return a new Frame object
+        new_frame = Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
+        return new_frame
+    
+    
+    def __pow__(self, other):
+        """Method overload for '**' operator"""
+        # Use guard clauses to check if this is allowed
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for **: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -232,7 +325,7 @@ class Frame:
             
             new_rgb = self.rgb ** other.rgb
         
-        elif type(other) in allowed_types:
+        else:
             new_rgb = self.rgb ** other
         
         # Now we need to return a new Frame object
@@ -241,9 +334,9 @@ class Frame:
     
     
     def __rpow__(self, other):
+        """Method overload for '**' operator"""
         # Use guard clauses to check if this is allowed
-        allowed_types = [int, float, np.ndarray]
-        if type(other) not in [Frame, int, float, np.ndarray]:
+        if type(other) not in MATH_SUPPORTED_TYPES:
             raise TypeError(f"unsupported operand type(s) for **: 'Frame' and '{type(other)}'")
         
         # Check if the frames are the same size
@@ -253,7 +346,7 @@ class Frame:
             
             new_rgb = other.rgb ** self.rgb
         
-        elif type(other) in allowed_types:
+        else:
             new_rgb = other ** self.rgb
         
         # Now we need to return a new Frame object
@@ -293,6 +386,15 @@ class Frame:
             raise NotImplementedError(f"frame format not implemented: {self.frame_format}")
         
         return func(self.frame_path, self.loadkwargs)
+
+
+# Supported types for math operations -------------------------------------------
+
+MATH_SUPPORTED_TYPES = [int, float, np.ndarray, Frame, 
+                        np.float64, np.float32, np.float16,
+                        np.int64, np.int32, np.int16, np.int8,
+                        np.uint64, np.uint32, np.uint16, np.uint8]
+
 
 # Default loading arguments -----------------------------------------------------
 

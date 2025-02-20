@@ -198,7 +198,7 @@ class Stacker:
 
         if load_frames:
             frames = self._load_frames(self.frame_paths[frame_type], frame_type)
-            return pre-post, frames
+            return post-pre, frames
         else:
             return post-pre
     
@@ -357,7 +357,7 @@ class Stacker:
         return master_frame
     
 
-    def calibrate_light_frame(self, ignore_missing_masters=False):
+    def calibrate_light_frames(self, ignore_missing_masters=False):
         if DEBUG:
             print('Calibrating light frames...')
 
@@ -376,6 +376,8 @@ class Stacker:
                     B = 0
                 else:
                     raise e
+        else:
+            B = self.master_bias
         
         if self.master_dark is None:
             # Create master dark
@@ -387,6 +389,8 @@ class Stacker:
                     D = 0
                 else:
                     raise e
+        else:
+            D = self.master_dark
         
         if self.master_flat is None:
             # Create master flat
@@ -398,6 +402,8 @@ class Stacker:
                     F = 0
                 else:
                     raise e
+        else:
+            F = self.master_flat
         
         # Load light frames if they are not loaded
         if len(self.lights) == 0:
@@ -409,9 +415,16 @@ class Stacker:
         dark_wo_bias = D - B
         flat_wo_bias = F - B
 
-        for light in tqdm(self.lights):
+        for light in tqdm(self.lights, desc='Creating reduced lights'):
             # reduced = ( L-(D-B) - B ) / ( F-B )
             reduced = ((light - B) - dark_wo_bias) / (flat_wo_bias) 
+
+            # We can keep brightness roughly the same by calculating the means
+            # and multiplying by the ratio of the means
+            mean = np.mean(light.rgb)
+            reduced_mean = np.mean(reduced.rgb)
+            reduced *= mean/reduced_mean
+
             reduced_lights.append(reduced)
 
         self.reduced_lights = reduced_lights
