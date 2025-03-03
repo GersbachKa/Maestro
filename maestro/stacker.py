@@ -412,17 +412,18 @@ class Stacker:
         # Now calibrate the light frames using the calibration equation
         reduced_lights = []
 
-        dark_wo_bias = D - B
-        flat_wo_bias = F - B
+        dark_no_bias = D - B
+        flat_no_bias = F - B
 
         for light in tqdm(self.lights, desc='Creating reduced lights'):
-            # reduced = ( L-(D-B) - B ) / ( F-B )
-            reduced = ((light - B) - dark_wo_bias) / (flat_wo_bias) 
+            # reduced = ( L - (D-B) - B ) / ( F - B )
+            light_no_bias = light - B
+            reduced = (light_no_bias - dark_no_bias) / (flat_no_bias) 
 
             # We can keep brightness roughly the same by calculating the means
             # and multiplying by the ratio of the means
-            mean = np.mean(light.rgb)
-            reduced_mean = np.mean(reduced.rgb)
+            mean = np.mean(light.rgb, axis=(0,1))
+            reduced_mean = np.mean(reduced.rgb, axis=(0,1))
             reduced *= mean/reduced_mean
 
             reduced_lights.append(reduced)

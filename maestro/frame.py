@@ -41,11 +41,13 @@ class Frame:
 
         NOTE: If setting the frame data directly (i.e. rgb_set), the numpy array
         will enforce positivity. This is because the frame data should not have
-        negative values.
+        negative values. Also, one should set the frame_format to 'master' or 'null'
+        if setting the frame data directly.
 
         Args:
             frame_path (str): The path to the frame file
-            frame_format (str, optional): The format of the frame file. Defaults to None.
+            frame_format (str, optional): The format of the frame file or 'master' 
+                or 'null' if directly setting the RGB values Defaults to None.
             loadkwargs (dict, optional): The keyword arguments to be passed to the frame 
                 loading function. Defaults to None.
             rgb_set (numpy.ndarray, optional): The frame data in RGB format. Only works
@@ -111,7 +113,46 @@ class Frame:
         gray = factor[0]*self.rgb[:,:,0] + \
                factor[1]*self.rgb[:,:,1] + \
                factor[2]*self.rgb[:,:,2]
+        
         return gray
+
+
+    def rescale(self, per_channel=True, modify_self=False):
+        """Rescale the frame data by a specified factor or automatically
+
+        This method rescales the frame data by a specified factor. If the scaling
+        factor is not specified, the method will automatically scale the data to
+        the range [0, 255]. This method can be used to rescale the data per color
+        channel independently or over the entire frame, keeping the relative 
+        colors the same.
+
+        This method can modify the frame data in place or return the rescaled data
+        as a new Frame object.
+
+        Args:
+            scaling (_type_, optional): _description_. Defaults to None.
+            per_channel (bool, optional): _description_. Defaults to True.
+            modify_self (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            new_frame (Frame): A new Frame object with the rescaled data
+        """
+        if DEBUG:
+            print('Rescaling frame...')
+
+        new_rgb = self.rgb.copy()
+        if per_channel:
+            for i in range(3):
+                scaling = 255/np.max(new_rgb[:,:,i])
+                new_rgb[:,:,i] = new_rgb[:,:,i] * scaling
+        else:
+            scaling = 255/np.max(new_rgb)
+            new_rgb = new_rgb * scaling
+
+        if modify_self:
+            self.rgb = new_rgb
+        
+        return Frame(frame_path=None, frame_format='null', rgb_set=new_rgb)
 
 
     def show(self, grayscale=False, scaling=1.0, to_uint8=True):
@@ -136,13 +177,33 @@ class Frame:
         """
         to_show = self.rgb if not grayscale else self.get_grayscale()
 
-        to_show = scaling*to_show
+        if scaling != 1.0:
+            to_show = scaling*to_show
 
         if to_uint8:
             to_show = to_show.astype(np.uint8)
 
         plt.imshow(to_show, cmap='gray')
 
+
+    def normalize(self, per_channel=True):
+        """Normalize the frame data such that the sum of the data is 1
+
+        This method normalizes the frame data such that the sum of the data is 1.
+        This is helpful for certain operations, such as flat fielding. This does
+        modify the frame data in place. If per_channel is True, the normalization
+        is done per channel (i.e. R, G, B). If per_channel is False, the normalization
+        is done over the entire frame.
+
+        Args:
+            per_channel (bool, optional): _description_. Defaults to True.
+        """
+        if per_channel:
+            for i in range(3):
+                self.rgb[:,:,i] = self.rgb[:,:,i] / np.sum(self.rgb[:,:,i])
+        else:
+            self.rgb = self.rgb / np.sum(self.rgb)
+                        
 
     def __add__(self, other):
         """Method overload for '+' operator"""
